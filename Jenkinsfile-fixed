@@ -1,0 +1,37 @@
+pipeline {
+    agent any
+    
+    stages {
+        stage('Build') {
+            steps {
+                sh 'npm install'
+                sh 'npm run build'
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                sh 'npm test'
+            }
+        }
+        
+        stage('Deploy') {
+            when {
+                branch 'master'
+            }
+            steps {
+                withCredentials([string(credentialsId: 'docker-registry-credentials', variable: 'DOCKER_CREDENTIALS')]) {
+                    sh 'echo $DOCKER_CREDENTIALS | docker login -u username --password-stdin'
+                    sh 'docker build -t registry.example.com/myapp:latest .'
+                    sh 'docker push registry.example.com/myapp:latest'
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            sh 'docker logout'
+        }
+    }
+}

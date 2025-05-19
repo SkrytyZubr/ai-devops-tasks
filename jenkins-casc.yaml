@@ -1,0 +1,171 @@
+jenkins:
+  systemMessage: "Jenkins skonfigurowany przez Configuration as Code"
+  numExecutors: 4
+  scmCheckoutRetryCount: 3
+  mode: NORMAL
+  quietPeriod: 5
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: "JAVA_HOME"
+            value: "/usr/lib/jvm/java-11-openjdk"
+          - key: "MAVEN_HOME"
+            value: "/usr/share/maven"
+  
+  remotingSecurity:
+    enabled: true
+  
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${ADMIN_PASSWORD}"
+  
+  authorizationStrategy:
+    roleBased:
+      roles:
+        global:
+          - name: "admin"
+            description: "Jenkins administrators"
+            permissions:
+              - "Overall/Administer"
+            assignments:
+              - "admin"
+          - name: "developer"
+            description: "Jenkins developers"
+            permissions:
+              - "Overall/Read"
+              - "Job/Build"
+              - "Job/Read"
+            assignments:
+              - "dev"
+  
+  globalDefaultFlowDurabilityLevel:
+    durabilityHint: PERFORMANCE_OPTIMIZED
+  
+  clouds:
+    - docker:
+        name: "docker-cloud"
+        dockerApi:
+          dockerHost:
+            uri: "unix:///var/run/docker.sock"
+        templates:
+          - labelString: "docker-agent"
+            dockerTemplateBase:
+              image: "jenkins/agent:latest"
+            remoteFs: "/home/jenkins/agent"
+            connector:
+              attach:
+                user: "jenkins"
+            instanceCapStr: "10"
+
+tool:
+  maven:
+    installations:
+      - name: "Maven 3.8.6"
+        home: "/usr/share/maven"
+        properties:
+          - installSource:
+              installers:
+                - maven:
+                    id: "3.8.6"
+  
+  nodejs:
+    installations:
+      - name: "Node.js 18.x"
+        properties:
+          - installSource:
+              installers:
+                - nodeJSInstaller:
+                    id: "18.15.0"
+                    npmPackages: "yarn@1.22.19"
+  
+  jdk:
+    installations:
+      - name: "JDK 11"
+        properties:
+          - installSource:
+              installers:
+                - adoptOpenJdkInstaller:
+                    id: "jdk-11.0.15+10"
+  
+  git:
+    installations:
+      - name: "Default"
+        home: "git"
+
+unclassified:
+  location:
+    url: "https://jenkins.example.com/"
+    adminAddress: "admin@example.com"
+  
+  globalLibraries:
+    libraries:
+      - name: "shared-libs"
+        defaultVersion: "main"
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "https://github.com/example/jenkins-shared-libs.git"
+                credentialsId: "github-creds"
+  
+  timestamper:
+    allPipelines: true
+    systemTimeFormat: "yyyy-MM-dd HH:mm:ss"
+    elapsedTimeFormat: "%14.3f"
+
+jobs:
+  - script: >
+      pipelineJob('example-pipeline') {
+        description('Przykładowy pipeline')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/example/example-app.git')
+                  credentials('github-creds')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+        triggers {
+          scm('H/15 * * * *')
+        }
+        properties {
+          disableConcurrentBuilds()
+          buildDiscarder {
+            strategy {
+              logRotator {
+                numToKeepStr('10')
+                daysToKeepStr('30')
+              }
+            }
+          }
+        }
+      }
+
+security:
+  queueItemAuthenticator:
+    authenticators:
+      - global:
+          strategy: triggeringUsersAuthorizationStrategy
+
+credentials:
+  system:
+    domainCredentials:
+      - domain:
+          name: "global"
+          description: "Globalne poświadczenia"
+        credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: "github-creds"
+              username: "jenkins-user"
+              password: "${GITHUB_TOKEN}"
+              description: "GitHub credentials"
